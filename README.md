@@ -1,6 +1,6 @@
 # Improved Lattice-based Mix-Net implementation
 
-This repository contains source code of a protocol from the paper *Improved Lattice-Based Mix-Nets for Electronic Voting*
+This repository contains source code of a protocol from the paper *Improved Lattice-Based Mix-Nets for Electronic Voting* accepted to ICISC 2021 by Jan Willemson, Jaan Kristjan Kaasik and Valeh Farzaliyev. 
 
 ## Run
 There are three test files to test Ring-LWE encryption algorithm, Zero-Knowledge proof of shortness of RLWE params, and Zero-Knowledge proof of shuffle. To compile and run test programs on Linux, run
