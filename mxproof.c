@@ -46,6 +46,7 @@ void mx_proof(proof *p, const uint8_t rho[2*PQMX_SYMBYTES], const poly rlwepk[2]
     expand_commkey(&ck, rho);
     commit(t, &r, m, &ck);
 
+#ifndef NO_SHORT
     // shortness proof
     polyvec_invntt_tomont(r.s,  PQMX_LAMBDA);
     polyvec_invntt_tomont(r.e,  PQMX_MU);
@@ -56,7 +57,7 @@ void mx_proof(proof *p, const uint8_t rho[2*PQMX_SYMBYTES], const poly rlwepk[2]
     polyvec_reduce_mont(r.em, PQMX_M);
 
     poly *m2  = (poly *) aligned_alloc(32, (4*(PQMX_LAMBDA+5*PQMX_NV)+3)*sizeof(poly));
-    memset(m2, 0, (4*(PQMX_LAMBDA+5*PQMX_NV)+3 )*sizeof(poly));
+    //memset(m2, 0, (4*(PQMX_LAMBDA+5*PQMX_NV)+3 )*sizeof(poly));
 
     for(k=0;k<2*PQMX_NV;k++){
         for(i=0;i<4;i++){
@@ -113,12 +114,14 @@ void mx_proof(proof *p, const uint8_t rho[2*PQMX_SYMBYTES], const poly rlwepk[2]
 
     polyvec_ntt(t->tm,2*PQMX_NV);
 
+#endif
     //randombytes(seed, PQMX_SYMBYTES);
 
     shake128_init(&state);
     shake128_absorb(&state, rho, 2*PQMX_SYMBYTES);
     shake128_absorb(&state, (uint8_t*)t->t0, PQMX_MU*sizeof(poly));
     shake128_absorb(&state, (uint8_t*)t->tm, 3*PQMX_NV*sizeof(poly));
+#ifndef NO_SHORT   
     shake128_absorb(&state, (uint8_t*)shortness_p.t->t0, PQMX_MU*sizeof(poly));
     shake128_absorb(&state, (uint8_t*)shortness_p.t->tm, (4*PQMX_LAMBDA+20*PQMX_NV+3)*sizeof(poly));
     shake128_absorb(&state, (uint8_t*)&shortness_p.h, sizeof(poly));
@@ -126,6 +129,7 @@ void mx_proof(proof *p, const uint8_t rho[2*PQMX_SYMBYTES], const poly rlwepk[2]
     shake128_absorb(&state, (uint8_t*)shortness_p.z.e, PQMX_MU*sizeof(poly));
     shake128_absorb(&state, (uint8_t*)shortness_p.z.em, (4*PQMX_LAMBDA+20*PQMX_NV+3)*sizeof(poly));
     shake128_absorb(&state, (uint8_t*)shortness_p.z.s, PQMX_LAMBDA*sizeof(poly));
+#endif    
     shake128_finalize(&state);
     shake128_squeeze(thash, PQMX_SYMBYTES, &state);
     
@@ -135,7 +139,7 @@ void mx_proof(proof *p, const uint8_t rho[2*PQMX_SYMBYTES], const poly rlwepk[2]
     poly_ntt(&alpha);
 
     poly *alphapowpis = (poly *) aligned_alloc(32, PQMX_NV*sizeof(poly));
-    memset(alphapowpis,0,PQMX_NV*sizeof(poly));
+    //memset(alphapowpis,0,PQMX_NV*sizeof(poly));
     alphapowpis[0] = alpha;
     for(j=1;j<PQMX_NV;j++){
         poly_basemul_montgomery(&alphapowpis[j], &alphapowpis[j-1], &alpha);
@@ -176,7 +180,7 @@ void mx_proof(proof *p, const uint8_t rho[2*PQMX_SYMBYTES], const poly rlwepk[2]
     poly_ntt(&gamma);
 
     poly *P = (poly *) aligned_alloc(32, (PQMX_NV+1)*sizeof(poly));    
-    memset(P, 0, (PQMX_NV+1)*sizeof(poly));
+    memset(P, 0, sizeof(poly));
     P[0].coeffs[0]=1;
     poly_ntt(&P[0]);
     
@@ -197,16 +201,44 @@ void mx_proof(proof *p, const uint8_t rho[2*PQMX_SYMBYTES], const poly rlwepk[2]
 
         poly_basemul_montgomery(&P[j+1], &P[j], &tmp);
         poly_tomont(&P[j+1]);
-        m[8*PQMX_NV+j] = P[j+1];
-        poly_add(&t->tm[8*PQMX_NV+j], &t->tm[8*PQMX_NV+j], &P[j+1]);
-        poly_reduce(&t->tm[8*PQMX_NV+j]);
+        // m[8*PQMX_NV+j] = P[j+1];
+    }
+
+    poly_add(&t->tm[8*PQMX_NV], &t->tm[8*PQMX_NV], &P[PQMX_NV]);
+    poly_reduce(&t->tm[8*PQMX_NV]);
+
+    shake128_init(&state);
+    shake128_absorb(&state, thash, PQMX_SYMBYTES);
+    shake128_absorb(&state, (uint8_t*)(t->tm+6*PQMX_NV), (2*PQMX_NV+1)*sizeof(poly));
+    shake128_finalize(&state);
+    shake128_squeeze(thash, PQMX_SYMBYTES, &state);
+
+    poly h[PQMX_ETA];
+    for(i=0;i<PQMX_ETA;i++){
+        poly_uniform_alpha(&h[i], thash, nonce++);  //sample g_i
+        poly_ntt(&h[i]);
+        poly_add(&t->tm[8*PQMX_NV+2+i], &t->tm[8*PQMX_NV+2+i], &h[i]);
+        poly_reduce(&t->tm[8*PQMX_NV+2+i]);  // commit g_i
     }
 
     shake128_init(&state);
     shake128_absorb(&state, thash, PQMX_SYMBYTES);
-    shake128_absorb(&state, (uint8_t*)(t->tm+6*PQMX_NV), 3*PQMX_NV*sizeof(poly));
+    shake128_absorb(&state, (uint8_t*)(t->tm+8*PQMX_NV+2), PQMX_ETA*sizeof(poly));
     shake128_finalize(&state);
     shake128_squeeze(thash, PQMX_SYMBYTES, &state);
+
+    poly *thetas = (poly *) aligned_alloc(32, (PQMX_NV*PQMX_ETA)*sizeof(poly));  
+    //memset(thetas, 0, PQMX_ETA*PQMX_NV*sizeof(poly));
+    for(i=0;i<PQMX_ETA*PQMX_NV;i++){
+        constant_poly_uniform_ntt(&thetas[i],thash,nonce++);
+    }
+
+    for(j=0;j<PQMX_ETA;j++){
+        polyvec_basemul_acc_montgomery(&tmp,&m[2*PQMX_NV], &thetas[j*PQMX_NV],PQMX_NV);
+        poly_tomont(&tmp);
+        poly_add(&h[j], &tmp, &h[j]);
+        poly_reduce(&h[j]);
+    }
 
     // generate uniform y
     commrnd y;
@@ -216,7 +248,7 @@ void mx_proof(proof *p, const uint8_t rho[2*PQMX_SYMBYTES], const poly rlwepk[2]
 
     poly *by = (poly *) aligned_alloc(32, PQMX_M*sizeof(poly));
     poly *epsilon = (poly *) aligned_alloc(32, (4*PQMX_NV+4)*sizeof(poly));
-    poly v[4];
+    poly v[4+PQMX_ETA];
     poly w[PQMX_MU];
     do{
         for(i=0;i<PQMX_LAMBDA;i++) {
@@ -254,6 +286,7 @@ void mx_proof(proof *p, const uint8_t rho[2*PQMX_SYMBYTES], const poly rlwepk[2]
         // hash thash,w
         shake128_init(&state);
         shake128_absorb(&state, thash, PQMX_SYMBYTES);
+        shake128_absorb(&state, (uint8_t*)h, PQMX_ETA*sizeof(poly));
         shake128_absorb(&state, (uint8_t*)w, PQMX_MU*sizeof(poly));
         shake128_finalize(&state);
         shake128_squeeze(thash, PQMX_SYMBYTES, &state);
@@ -264,7 +297,7 @@ void mx_proof(proof *p, const uint8_t rho[2*PQMX_SYMBYTES], const poly rlwepk[2]
             poly_ntt(&epsilon[j]);
         }
 
-        memset(v, 0, 4*sizeof(poly));
+        memset(v, 0, (4+PQMX_ETA)*sizeof(poly));
 
         for(j=0;j<PQMX_NV;j++){
             poly_basemul_montgomery(&tmp, &by[2*PQMX_NV+j], &beta);
@@ -279,7 +312,7 @@ void mx_proof(proof *p, const uint8_t rho[2*PQMX_SYMBYTES], const poly rlwepk[2]
             poly_reduce(&v[0]);
         }
         poly vtmp;
-        v[1] = by[PQMX_M-1];
+        v[1] = by[8*PQMX_NV+1];
         for(j=0;j<PQMX_NV;j++){
             poly_basemul_montgomery(&tmp, &by[6*PQMX_NV+j], &by[7*PQMX_NV+j]);
             poly_tomont(&tmp);
@@ -306,14 +339,14 @@ void mx_proof(proof *p, const uint8_t rho[2*PQMX_SYMBYTES], const poly rlwepk[2]
         for(j=0;j<PQMX_NV;j++){
             poly_basemul_montgomery(&tmp, &by[6*PQMX_NV+j], &m[7*PQMX_NV+j]);
             poly_tomont(&tmp);
-            poly_sub(&vtmp, &by[8*PQMX_NV+j], &tmp);
+            poly_sub(&vtmp, &by[7*PQMX_NV+j+1], &tmp);
             poly_basemul_montgomery(&tmp, &by[7*PQMX_NV+j], &m[6*PQMX_NV+j]);
             poly_tomont(&tmp);
             poly_sub(&vtmp, &vtmp, &tmp);
             poly_basemul_montgomery(&vtmp, &vtmp, &epsilon[PQMX_NV+j]);
             poly_tomont(&vtmp);
-            poly_add(&t->tm[PQMX_M-1], &t->tm[PQMX_M-1], &vtmp);
-            poly_reduce(&t->tm[PQMX_M-1]);
+            poly_add(&t->tm[8*PQMX_NV+1], &t->tm[8*PQMX_NV+1], &vtmp);
+            poly_reduce(&t->tm[8*PQMX_NV+1]);
 
             poly_basemul_montgomery(&tmp, &by[j], &m[3*PQMX_NV+j]);
             poly_tomont(&tmp);
@@ -323,8 +356,8 @@ void mx_proof(proof *p, const uint8_t rho[2*PQMX_SYMBYTES], const poly rlwepk[2]
             poly_sub(&vtmp, &vtmp, &tmp);
             poly_basemul_montgomery(&vtmp, &vtmp, &epsilon[2*PQMX_NV+j]);
             poly_tomont(&vtmp);
-            poly_add(&t->tm[PQMX_M-1], &t->tm[PQMX_M-1], &vtmp);
-            poly_reduce(&t->tm[PQMX_M-1]);
+            poly_add(&t->tm[8*PQMX_NV+1], &t->tm[8*PQMX_NV+1], &vtmp);
+            poly_reduce(&t->tm[8*PQMX_NV+1]);
 
             poly_basemul_montgomery(&tmp, &by[PQMX_NV+j], &m[3*PQMX_NV+j]);
             poly_tomont(&tmp);
@@ -334,8 +367,8 @@ void mx_proof(proof *p, const uint8_t rho[2*PQMX_SYMBYTES], const poly rlwepk[2]
             poly_sub(&vtmp, &vtmp, &tmp);
             poly_basemul_montgomery(&vtmp, &vtmp, &epsilon[3*PQMX_NV+j]);
             poly_tomont(&vtmp);
-            poly_add(&t->tm[PQMX_M-1], &t->tm[PQMX_M-1], &vtmp);
-            poly_reduce(&t->tm[PQMX_M-1]);
+            poly_add(&t->tm[8*PQMX_NV+1], &t->tm[8*PQMX_NV+1], &vtmp);
+            poly_reduce(&t->tm[8*PQMX_NV+1]);
         }
 
         memset(&vtmp, 0 , sizeof(poly));
@@ -365,7 +398,7 @@ void mx_proof(proof *p, const uint8_t rho[2*PQMX_SYMBYTES], const poly rlwepk[2]
         poly_add(&v[2], &v[2], &vtmp);
         poly_reduce(&v[2]);
 
-        poly_basemul_montgomery(&tmp, &epsilon[4*PQMX_NV+2], &by[9*PQMX_NV-1]);
+        poly_basemul_montgomery(&tmp, &epsilon[4*PQMX_NV+2], &by[8*PQMX_NV]);
         poly_tomont(&tmp);
         poly_add(&v[3], &v[3], &tmp);
         poly_basemul_montgomery(&tmp, &epsilon[4*PQMX_NV+3], &by[7*PQMX_NV]);
@@ -373,10 +406,17 @@ void mx_proof(proof *p, const uint8_t rho[2*PQMX_SYMBYTES], const poly rlwepk[2]
         poly_add(&v[3], &v[3], &tmp);
         poly_reduce(&v[3]);
 
+        for(j=0;j<PQMX_ETA;j++){
+            polyvec_basemul_acc_montgomery(&v[4+j],&by[2*PQMX_NV], &thetas[j*PQMX_NV],PQMX_NV);
+            poly_tomont(&v[4+j]);
+            poly_add(&v[4+j], &by[8*PQMX_NV+2+j], &v[4+j]);
+            poly_reduce(&v[4+j]);
+        }
+
         shake128_init(&state);
         shake128_absorb(&state, thash, PQMX_SYMBYTES);
-        shake128_absorb(&state, (uint8_t*)v, 4*sizeof(poly));
-        shake128_absorb(&state, (uint8_t*)(t->tm+9*PQMX_NV), sizeof(poly));
+        shake128_absorb(&state, (uint8_t*)v, (4+PQMX_ETA)*sizeof(poly));
+        shake128_absorb(&state, (uint8_t*)(t->tm+8*PQMX_NV+1), sizeof(poly));
         shake128_finalize(&state);
         shake128_squeeze(chash, PQMX_SYMBYTES, &state);
         
@@ -427,13 +467,17 @@ void mx_proof(proof *p, const uint8_t rho[2*PQMX_SYMBYTES], const poly rlwepk[2]
     p->z.e = y.e;
     p->z.em = y.em;
     p->z.s = y.s;
+#ifndef NO_SHORT   
     p->sp = (void *) &shortness_p;
+#endif
     p->t = t;
     memcpy(p->hash, chash, PQMX_SYMBYTES);
+    memcpy(p->h, h, PQMX_ETA*sizeof(poly));
 
     free(m);
     free(P);
     free(alphapowpis);
+    free(thetas);
     free(by);
     free(epsilon);
     free(r.e);
@@ -458,7 +502,7 @@ void mx_proof(proof *p, const uint8_t rho[2*PQMX_SYMBYTES], const poly rlwepk[2]
 * Returns:     - 0: if verified successfully
 *              - 1: otherwise
 **************************************************/
-int mx_proof_verify(const proof *p, const uint8_t rho[2*PQMX_SYMBYTES], poly rlwepk[2], const rlwecp in[PQMX_NV], const rlwecp out[PQMX_NV])
+int mx_proof_verify(proof *p, const uint8_t rho[2*PQMX_SYMBYTES], poly rlwepk[2], const rlwecp in[PQMX_NV], const rlwecp out[PQMX_NV])
 {
     unsigned int i,j, nonce=0;
     uint8_t symbuf[2*PQMX_SYMBYTES];
@@ -484,6 +528,7 @@ int mx_proof_verify(const proof *p, const uint8_t rho[2*PQMX_SYMBYTES], poly rlw
     comm *t = p->t;
     expand_commkey(&ck, rho);
 
+#ifndef NO_SHORT
     shortness_proof *sp = (shortness_proof *) p->sp;
     for(j=0;j<2*PQMX_NV;j++){
         polyvec_invntt_tomont(&ck.bm[j], PQMX_LAMBDA);
@@ -504,7 +549,7 @@ int mx_proof_verify(const proof *p, const uint8_t rho[2*PQMX_SYMBYTES], poly rlw
     if(res){
         return 1;
     }
-
+#endif
     poly c;
     poly_nonuniform(&c, 0x80, p->hash, 0);
     poly_ntt(&c);
@@ -545,6 +590,7 @@ int mx_proof_verify(const proof *p, const uint8_t rho[2*PQMX_SYMBYTES], poly rlw
     shake128_absorb(&state, rho, 2*PQMX_SYMBYTES);
     shake128_absorb(&state, (uint8_t*)t->t0, PQMX_MU*sizeof(poly));
     shake128_absorb(&state, (uint8_t*)t->tm, 3*PQMX_NV*sizeof(poly));
+#ifndef NO_SHORT    
     shake128_absorb(&state, (uint8_t*) sp->t->t0, PQMX_MU*sizeof(poly));
     shake128_absorb(&state, (uint8_t*) sp->t->tm, (4*PQMX_LAMBDA+20*PQMX_NV+3)*sizeof(poly));
     shake128_absorb(&state, (uint8_t*) &sp->h, sizeof(poly));
@@ -552,6 +598,7 @@ int mx_proof_verify(const proof *p, const uint8_t rho[2*PQMX_SYMBYTES], poly rlw
     shake128_absorb(&state, (uint8_t*) sp->z.e, PQMX_MU*sizeof(poly));
     shake128_absorb(&state, (uint8_t*) sp->z.em, (4*PQMX_LAMBDA+20*PQMX_NV+3)*sizeof(poly));
     shake128_absorb(&state, (uint8_t*) sp->z.s, PQMX_LAMBDA*sizeof(poly));
+#endif    
     shake128_finalize(&state);
     shake128_squeeze(thash, PQMX_SYMBYTES, &state);
 
@@ -597,12 +644,38 @@ int mx_proof_verify(const proof *p, const uint8_t rho[2*PQMX_SYMBYTES], poly rlw
     }
     shake128_init(&state);
     shake128_absorb(&state, thash, PQMX_SYMBYTES);
-    shake128_absorb(&state, (uint8_t*)(t->tm+6*PQMX_NV), 3*PQMX_NV*sizeof(poly));
+    shake128_absorb(&state, (uint8_t*)(t->tm+6*PQMX_NV), (2*PQMX_NV+1)*sizeof(poly));
     shake128_finalize(&state);
     shake128_squeeze(thash, PQMX_SYMBYTES, &state);
 
+    nonce+= PQMX_ETA;
+
+    polyvec_invntt_tomont(p->h,PQMX_ETA);
+    polyvec_reduce_mont(p->h,PQMX_ETA);
+    for(i=0;i<PQMX_ETA;i++){
+        for(j=PQMX_N/PQMX_L;j<PQMX_N;j++){
+            if(p->h[i].coeffs[j] != 0){
+                return 1;
+            }
+        }
+    }
+    polyvec_ntt(p->h,PQMX_ETA);
+
     shake128_init(&state);
     shake128_absorb(&state, thash, PQMX_SYMBYTES);
+    shake128_absorb(&state, (uint8_t*)(t->tm+8*PQMX_NV+2), PQMX_ETA*sizeof(poly));
+    shake128_finalize(&state);
+    shake128_squeeze(thash, PQMX_SYMBYTES, &state);
+
+    poly *thetas = (poly *) aligned_alloc(32, (PQMX_NV*PQMX_ETA)*sizeof(poly));  
+    //memset(thetas, 0, PQMX_ETA*PQMX_NV*sizeof(poly));
+    for(i=0;i<PQMX_ETA*PQMX_NV;i++){
+        constant_poly_uniform_ntt(&thetas[i],thash,nonce++);
+    }
+
+    shake128_init(&state);
+    shake128_absorb(&state, thash, PQMX_SYMBYTES);
+    shake128_absorb(&state, (uint8_t*)p->h, PQMX_ETA*sizeof(poly));
     shake128_absorb(&state, (uint8_t*)w, PQMX_MU*sizeof(poly));
     shake128_finalize(&state);
     shake128_squeeze(thash, PQMX_SYMBYTES, &state);
@@ -615,8 +688,8 @@ int mx_proof_verify(const proof *p, const uint8_t rho[2*PQMX_SYMBYTES], poly rlw
         poly_ntt(&epsilon[j]);
     }
 
-    poly v[4], vtmp;
-    memset(v, 0, 4*sizeof(poly));
+    poly v[4+PQMX_ETA], vtmp;
+    memset(v, 0, (4+PQMX_ETA)*sizeof(poly));
 
     poly cg;
     poly_basemul_montgomery(&cg,&c,&gamma);
@@ -640,7 +713,7 @@ int mx_proof_verify(const proof *p, const uint8_t rho[2*PQMX_SYMBYTES], poly rlw
     for(i=0;i<PQMX_NV;i++){
         poly_basemul_montgomery(&tmp, &f[6*PQMX_NV+i], &f[7*PQMX_NV+i]);
         poly_tomont(&tmp);
-        poly_basemul_montgomery(&vtmp, &f[8*PQMX_NV+i], &c);
+        poly_basemul_montgomery(&vtmp, &f[7*PQMX_NV+i+1], &c);
         poly_tomont(&vtmp);
         poly_add(&vtmp, &vtmp, &tmp);
         poly_reduce(&vtmp);
@@ -671,7 +744,7 @@ int mx_proof_verify(const proof *p, const uint8_t rho[2*PQMX_SYMBYTES], poly rlw
         poly_add(&v[1], &v[1], &tmp);
         poly_reduce(&v[1]);
     }
-    poly_add(&v[1], &v[1], &f[PQMX_M-1]);
+    poly_add(&v[1], &v[1], &f[8*PQMX_NV+1]);
     poly_reduce(&v[1]);
 
     poly M[2];
@@ -729,7 +802,7 @@ int mx_proof_verify(const proof *p, const uint8_t rho[2*PQMX_SYMBYTES], poly rlw
 
     poly_basemul_montgomery(&tmp, &P, &c);
     poly_tomont(&tmp);
-    poly_add(&tmp, &tmp, &f[9*PQMX_NV-1]);
+    poly_add(&tmp, &tmp, &f[8*PQMX_NV]);
     poly_reduce(&tmp);
     poly_basemul_montgomery(&tmp, &epsilon[4*PQMX_NV+2], &tmp);
     poly_tomont(&tmp);
@@ -742,16 +815,30 @@ int mx_proof_verify(const proof *p, const uint8_t rho[2*PQMX_SYMBYTES], poly rlw
     poly_add(&v[3], &v[3], &tmp);
     poly_reduce(&v[3]);
 
+
+    for(j=0;j<PQMX_ETA;j++){
+        polyvec_basemul_acc_montgomery(&v[4+j], &f[2*PQMX_NV] ,&thetas[j*PQMX_NV], PQMX_NV);
+        poly_tomont(&v[4+j]);
+        poly_add(&v[4+j],&v[4+j], &f[8*PQMX_NV+2+j]);
+        poly_reduce(&v[4+j]);
+        poly_basemul_montgomery(&tmp, &p->h[j], &c);
+        poly_tomont(&tmp);
+        poly_add(&v[4+j], &v[4+j], &tmp);
+        poly_reduce(&v[4+j]);
+    }
+
+
     shake128_init(&state);
     shake128_absorb(&state, thash, PQMX_SYMBYTES);
-    shake128_absorb(&state, (uint8_t*)v, 4*sizeof(poly));
-    shake128_absorb(&state, (uint8_t*)(t->tm+9*PQMX_NV), sizeof(poly));
+    shake128_absorb(&state, (uint8_t*)v, (4+PQMX_ETA)*sizeof(poly));
+    shake128_absorb(&state, (uint8_t*)(t->tm+8*PQMX_NV+1), sizeof(poly));
     shake128_finalize(&state);
     shake128_squeeze(chash, PQMX_SYMBYTES, &state);
     
     free(f);
     free(epsilon);
     free(alphapowpis);
+    free(thetas);
     free(ck.b0);
     free(ck.bm);
     free(ck.bt);

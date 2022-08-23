@@ -43,5 +43,19 @@ int main(void)
   poly_tomsg(msg, &m);
   printf("Decrypted ciphertext: %s\n",(const char *)msg);
 
+  uint8_t msg2[PQMX_INDCPA_MSGBYTES];
+  memset(msg2, 0, PQMX_INDCPA_MSGBYTES);
+
+  poly_frommsg(&m, msg);
+  poly m2;
+
+  int failures = 0;
+  for(i=0;i<NTESTS;i++){
+    rlwe_enc(&cp, &m, rlwepk, &rnd);
+    rlwe_dec(&m2, &rlwesk, &cp);
+    poly_tomsg(msg2, &m2);
+    failures += memcmp(msg, msg2, PQMX_INDCPA_MSGBYTES) != 0;
+  }
+  printf("number of failures: %d\n", failures);
   return 0;
 }

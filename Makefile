@@ -22,8 +22,11 @@ all: \
 %_shuffle.o: %.c params.h Makefile
 	$(CC) $(CFLAGS) -c $< -o $@
 
+test_mx: $(SOURCESKECCAK) rlwe.c comm_shuffle.o comm_short.o shortness_proof_short.o mxproof.c test_shuffle.c randombytes.c 
+	$(CC) $(CFLAGS) $^ -o test_mx -lm
+
 test_shuffle: $(SOURCESKECCAK) rlwe.c comm_shuffle.o comm_short.o shortness_proof_short.o mxproof.c test_shuffle.c randombytes.c 
-	$(CC) $(CFLAGS) $^ -o test_shuffle -lm
+	$(CC) $(CFLAGS) -DNO_SHORT=1 $^ -o test_shuffle -lm
 
 test_shortness: $(SOURCESKECCAK) randombytes.c shortness_proof_short.o comm_short.o comm_shuffle.o rlwe.c test_shortness.c
 	$(CC) $(CFLAGS) $^ -o test_shortness -lm
@@ -36,3 +39,4 @@ clean:
 	-$(RM) -rf test_rlwe
 	-$(RM) -rf test_shuffle
 	-$(RM) -rf test_shortness
+	-$(RM) -rf test_mx

@@ -28,6 +28,8 @@ void poly_tomsg(uint8_t msg[PQMX_INDCPA_MSGBYTES], const poly *r);
 void poly_uniform(poly *r, const uint8_t seed[PQMX_SYMBYTES], uint32_t nonce);
 #define poly_uniform_alpha PQMX_NAMESPACE(poly_uniform_alpha)
 void poly_uniform_alpha(poly *r, const uint8_t seed[PQMX_SYMBYTES], uint32_t nonce);
+#define constant_poly_uniform_ntt PQMX_NAMESPACE(constant_poly_uniform_ntt)
+void constant_poly_uniform_ntt(poly *r, const uint8_t seed[PQMX_SYMBYTES], uint32_t nonce);
 #define poly_nonuniform PQMX_NAMESPACE(poly_nonuniform)
 void poly_nonuniform(poly *r, uint8_t mode, const uint8_t seed[PQMX_SYMBYTES], uint32_t nonce);
 

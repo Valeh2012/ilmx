@@ -1,16 +1,13 @@
 #ifndef PARAMS_H
 #define PARAMS_H
 
-
-//#define PQMX_90S	/* Uncomment this if you want the 90S variant */
-
 #define PQMX_NAMESPACE(s) PQMX_##s
 
 #define PQMX_N 4096
 #define PQMX_L 1024
 #define PQMX_Q 4611686018427365377
 #define PQMX_BETA 4096
-
+#define PQMX_ETA 2
 
 #define PQMX_SYMBYTES 512   /* size in bytes of hashes, and seeds */
 #define PQMX_SSBYTES  32   /* size in bytes of shared key */
@@ -22,8 +19,10 @@
 #define PQMX_LAMBDA 1
 #define PQMX_NV 10
 
+
+
 #ifndef SHORT 
-#define PQMX_M (9*PQMX_NV+3)
+#define PQMX_M (8*PQMX_NV+4+PQMX_ETA)
 #define PQMX_DELTA (1L<<43)
 #define PQMX_POLYCOMPRESSEDBYTES    22528
 #else 

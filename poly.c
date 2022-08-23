@@ -17,7 +17,7 @@
 **************************************************/
 void poly_tobytes(uint8_t r[PQMX_POLYBYTES], const poly *a)
 {
- memcpy(r, a->coeffs, 4096*sizeof(int64_t));
+ memcpy(r, a->coeffs, PQMX_N*sizeof(int64_t));
 }
 
 /*************************************************
@@ -32,7 +32,7 @@ void poly_tobytes(uint8_t r[PQMX_POLYBYTES], const poly *a)
 **************************************************/
 void poly_frombytes(poly *r, const uint8_t a[PQMX_POLYBYTES])
 {
-  memcpy(r->coeffs, a, 4096*sizeof(int64_t));
+  memcpy(r->coeffs, a, PQMX_N*sizeof(int64_t));
 }
 
 /*************************************************
@@ -191,6 +191,38 @@ void poly_uniform_alpha(poly *r, const uint8_t seed[PQMX_SYMBYTES], uint32_t non
     ctr+= rej_uniform(r->coeffs + ctr, PQMX_N - ctr, rnd, buflen);
   }
 
+  poly_reduce(r);
+}
+
+/*************************************************
+* Name:        constant_poly_uniform_ntt
+*
+* Description: Generate uniform random constant polynomial (integer) in R_q in NTT domain 
+*
+* Arguments:   - const poly *r: pointer to output polynomial
+*              - const uint8_t seed[]: pointer to input buffer 
+*              (assumed to be uniformly random bytes) of length PQMX_SYMBYTES
+*              - uint32_t nonce: 32-bit nonce 
+**************************************************/
+void constant_poly_uniform_ntt(poly *r, const uint8_t seed[PQMX_SYMBYTES], uint32_t nonce)
+{
+  unsigned int i,ctr=0,buflen;
+  xof_state state;
+  uint8_t rnd[XOF_BLOCKBYTES];
+  memset(rnd,0,sizeof(rnd));
+  memset(r->coeffs, 0, PQMX_POLYBYTES);
+
+  buflen = XOF_BLOCKBYTES;
+  int64_t coeff=0;
+  xof_absorb(&state, seed, nonce);
+  
+  while(!ctr) {
+    xof_squeezeblocks(rnd, 1, &state);
+    ctr += rej_uniform(&coeff, 1, rnd, buflen);
+  }
+  for(i=0;i<PQMX_N;i+=PQMX_N/PQMX_L)
+    r->coeffs[i] = coeff;
+  
   poly_reduce(r);
 }
 
